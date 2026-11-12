@@ -3,6 +3,8 @@ import fs from 'node:fs';
 
 const template = fs.readFileSync('src-tauri/windows/nsis/installer.nsi', 'utf8');
 const hooks = fs.readFileSync('src-tauri/windows/nsis/installer-hooks.nsi', 'utf8');
+assert.match(template, /^!include "Win\\RestartManager\.nsh"$/m,
+  'The custom template must include the Restart Manager macros used by the pinned Tauri CLI');
 const uninstall = template.split('Section Uninstall')[1]?.split('SectionEnd')[0];
 assert.ok(uninstall, 'Uninstaller section must exist');
 const check = uninstall.indexOf('!insertmacro CheckIfAppIsRunning');
