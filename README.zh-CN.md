@@ -1,3 +1,6 @@
+本仓库为 [Adularia 维护分支](https://github.com/Adularia-Z/mz-browser)。
+修复说明与卸载保留数据的行为见 [FORK_CHANGES.md](FORK_CHANGES.md)。
+
 <div align="center">
   <img src="./public/assets/logo.png" alt="MZ指纹浏览器 Logo" width="120" />
   <h1>MZ指纹浏览器</h1>

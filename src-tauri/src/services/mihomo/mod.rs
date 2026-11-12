@@ -543,7 +543,8 @@ fn persist_connection_config(
     config: &MihomoConnectionConfig,
 ) -> Result<(), String> {
     let mut stored = config.clone();
-    stored.secret = business::secret::protect(&config.secret);
+    stored.secret = business::secret::protect(&config.secret)
+        .map_err(|error| format!("无法加密 Mihomo 访问密钥: {error}"))?;
     tauri_store::set_store_key(
         app,
         MIHOMO_CONNECTION_CONFIG_STORE_KEY,

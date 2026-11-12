@@ -17,6 +17,10 @@ pub async fn insert_proxy(
     country: Option<&str>,
     city: Option<&str>,
 ) -> Result<Uuid, Error> {
+    let password = password
+        .map(crate::secret::protect)
+        .transpose()
+        .map_err(Error::Protocol)?;
     let uuid: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO proxies (name, host, port, proxy_type,
@@ -30,7 +34,7 @@ pub async fn insert_proxy(
     .bind(port)
     .bind(proxy_type)
     .bind(username)
-    .bind(password.map(crate::secret::protect))
+    .bind(password)
     .bind(country)
     .bind(city)
     .fetch_one(pool)
@@ -146,6 +150,10 @@ pub async fn update_proxy(
     country: Option<&str>,
     city: Option<&str>,
 ) -> Result<(), Error> {
+    let password = password
+        .map(crate::secret::protect)
+        .transpose()
+        .map_err(Error::Protocol)?;
     sqlx::query(
         r#"
         UPDATE proxies
@@ -165,7 +173,7 @@ pub async fn update_proxy(
     .bind(port)
     .bind(proxy_type)
     .bind(username)
-    .bind(password.map(crate::secret::protect))
+    .bind(password)
     .bind(country)
     .bind(city)
     .bind(proxy_uuid)

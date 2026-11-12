@@ -72,7 +72,7 @@ mod dpapi {
     }
 }
 
-/// 只支持 Windows 内核，其他平台不加密（保留明文，开发和测试用）。
+/// DPAPI 只支持 Windows。其他平台的写入失败关闭；旧版明文仍可读取。
 #[cfg(not(windows))]
 mod dpapi {
     pub fn encrypt(_plain: &[u8]) -> Result<Vec<u8>, String> {
@@ -88,18 +88,21 @@ pub fn is_protected(stored: &str) -> bool {
     stored.starts_with(PREFIX)
 }
 
-/// 加密要写入磁盘的值。空值和已加密的值原样返回。
-pub fn protect(plain: &str) -> String {
+fn protect_with(
+    plain: &str,
+    encrypt: impl FnOnce(&[u8]) -> Result<Vec<u8>, String>,
+) -> Result<String, String> {
     if plain.is_empty() || is_protected(plain) {
-        return plain.to_string();
+        return Ok(plain.to_string());
     }
-    match dpapi::encrypt(plain.as_bytes()) {
-        Ok(cipher) => format!("{PREFIX}{}", BASE64.encode(cipher)),
-        Err(error) => {
-            tracing::warn!("could not encrypt a secret, storing it unprotected: {error}");
-            plain.to_string()
-        }
-    }
+    let cipher = encrypt(plain.as_bytes())
+        .map_err(|error| format!("DPAPI encryption failed: {error}"))?;
+    Ok(format!("{PREFIX}{}", BASE64.encode(cipher)))
+}
+
+/// 加密要写入磁盘的值。空值和已加密的值原样返回；加密失败时返回错误，不返回明文。
+pub fn protect(plain: &str) -> Result<String, String> {
+    protect_with(plain, dpapi::encrypt)
 }
 
 /// 还原读出来的值。旧版本留下的明文原样返回；解不开（换了电脑或用户）时返回 None。
@@ -158,7 +161,7 @@ pub async fn encrypt_existing(pool: &Pool<Db>) -> Result<u64, Error> {
         let rows: Vec<(i64, String)> = sqlx::query_as(&select).fetch_all(&mut *tx).await?;
         let update = format!("UPDATE {table} SET {column} = $1 WHERE id = $2");
         for (id, plain) in rows {
-            let protected = protect(&plain);
+            let protected = protect(&plain).map_err(Error::Protocol)?;
             if protected == plain {
                 continue;
             }
@@ -170,23 +173,30 @@ pub async fn encrypt_existing(pool: &Pool<Db>) -> Result<u64, Error> {
     Ok(updated)
 }
 
-#[cfg(all(test, windows))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn round_trip_including_chinese() {
-        let stored = protect("密码 p@ss");
-        assert!(is_protected(&stored));
-        assert!(!stored.contains("p@ss"));
-        assert_eq!(reveal(&stored).as_deref(), Some("密码 p@ss"));
+    fn encryption_failure_returns_an_error_instead_of_the_plaintext() {
+        let plaintext = "secret that must not be stored";
+        let result = protect_with(plaintext, |_| Err("forced DPAPI failure".into()));
+
+        assert!(matches!(
+            result,
+            Err(error)
+                if error.contains("forced DPAPI failure") && !error.contains(plaintext)
+        ));
     }
 
     #[test]
     fn empty_and_already_protected_values_are_unchanged() {
-        assert_eq!(protect(""), "");
-        let stored = protect("x");
-        assert_eq!(protect(&stored), stored);
+        let empty = protect_with("", |_| Err("encrypt should not be called".into()));
+        assert!(matches!(empty, Ok(value) if value.is_empty()));
+
+        let stored = format!("{PREFIX}AAAA");
+        let unchanged = protect_with(&stored, |_| Err("encrypt should not be called".into()));
+        assert!(matches!(unchanged, Ok(value) if value == stored));
     }
 
     #[test]
@@ -202,5 +212,21 @@ mod tests {
         assert_eq!(column, None);
         let text: String = StoredText(format!("{PREFIX}AAAA")).into();
         assert_eq!(text, "");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn non_windows_writes_fail_closed() {
+        let plaintext = "secret that must not be stored";
+        assert!(matches!(protect(plaintext), Err(error) if !error.contains(plaintext)));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn round_trip_including_chinese() {
+        let stored = protect("密码 p@ss").expect("DPAPI encryption should succeed");
+        assert!(is_protected(&stored));
+        assert!(!stored.contains("p@ss"));
+        assert_eq!(reveal(&stored).as_deref(), Some("密码 p@ss"));
     }
 }

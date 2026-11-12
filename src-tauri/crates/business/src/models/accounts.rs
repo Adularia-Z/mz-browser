@@ -14,6 +14,10 @@ pub async fn insert_platform_account(
     password: Option<&str>,
     remark: Option<&str>,
 ) -> Result<Uuid, Error> {
+    let password = password
+        .map(crate::secret::protect)
+        .transpose()
+        .map_err(Error::Protocol)?;
     let uuid: Uuid = sqlx::query_scalar(
         r#"
         INSERT INTO platform_accounts (platform_url, platform_name,
@@ -25,7 +29,7 @@ pub async fn insert_platform_account(
     .bind(platform_url)
     .bind(platform_name)
     .bind(account)
-    .bind(password.map(crate::secret::protect))
+    .bind(password)
     .bind(remark)
     .fetch_one(pool)
     .await?;
@@ -142,6 +146,10 @@ pub async fn update_platform_account(
     remark: Option<&str>,
     status: Option<&str>,
 ) -> Result<(), Error> {
+    let password = password
+        .map(crate::secret::protect)
+        .transpose()
+        .map_err(Error::Protocol)?;
     sqlx::query(
         r#"
         UPDATE platform_accounts
@@ -157,7 +165,7 @@ pub async fn update_platform_account(
     .bind(platform_url)
     .bind(platform_name)
     .bind(account)
-    .bind(password.map(crate::secret::protect))
+    .bind(password)
     .bind(remark)
     .bind(status)
     .bind(account_uuid)

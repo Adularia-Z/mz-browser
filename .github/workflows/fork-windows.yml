@@ -1,0 +1,74 @@
+name: Fork Windows build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-package:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      ENV_NAME: production
+      MZ_WEBVIEW_MODE: embedBootstrapper
+      CARGO_INCREMENTAL: '0'
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Locked frontend dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Frontend and installer policy checks
+        run: |
+          pnpm typecheck:regression
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node deploy/test-installer-safety.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node build.cjs
+          exit $LASTEXITCODE
+      - name: Native business tests
+        working-directory: src-tauri
+        run: cargo test --locked -p business
+      - name: Browser runtime policy tests
+        working-directory: src-tauri
+        run: cargo test --locked -p runtime
+      - name: Native application and MCP tests
+        working-directory: src-tauri
+        run: cargo test --locked --lib
+      - name: Package signed x64 installer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+        run: pnpm exec tauri build --features production --target x86_64-pc-windows-msvc --bundles nsis
+      - name: Test real install and uninstall with unrelated files
+        run: |
+          $installers = @(Get-ChildItem src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe)
+          if ($installers.Count -ne 1) { throw 'Expected exactly one installer' }
+          ./deploy/test-installed-uninstall.ps1 -Installer $installers[0].FullName
+      - name: Assemble verified artifacts
+        run: |
+          New-Item -ItemType Directory -Path release-output | Out-Null
+          Copy-Item src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe* release-output/
+          node deploy/fork-release-manifest.mjs release-output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mz-browser-windows-x64
+          path: release-output/*
+          if-no-files-found: error
+          retention-days: 30

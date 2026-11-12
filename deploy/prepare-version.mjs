@@ -78,6 +78,7 @@ const tauriConfPaths = [
   'tauri.conf.fixed-runtime.json',
 ].map((name) => path.join(root, 'src-tauri', name));
 const cargoTomlPath = path.join(root, 'src-tauri', 'Cargo.toml');
+const cargoLockPath = path.join(root, 'src-tauri', 'Cargo.lock');
 const packageJsonPath = path.join(root, 'package.json');
 
 console.log(`[prepare-version] Using version: ${version}`);
@@ -99,6 +100,12 @@ const cargoChanged = updateCargoTomlVersion(cargoTomlPath, version);
 console.log(
   `[prepare-version] ${cargoChanged ? 'Updated' : 'Kept'} ${path.relative(root, cargoTomlPath)} -> package.version=${version}`
 );
+
+// Keep --locked validation usable after changing the root package version.
+const cargoLock = fs.readFileSync(cargoLockPath, 'utf8');
+const rootPackage = /(\[\[package\]\]\r?\nname = "mz-browser"\r?\nversion = ")([^"]+)(")/;
+if (!rootPackage.test(cargoLock)) throw new Error('Failed to locate mz-browser in Cargo.lock');
+fs.writeFileSync(cargoLockPath, cargoLock.replace(rootPackage, `$1${version}$3`), 'utf8');
 
 // package.json
 const pkg = readJson(packageJsonPath);

@@ -1,3 +1,6 @@
+This is the [Adularia maintenance fork](https://github.com/Adularia-Z/mz-browser).
+See [fork changes and uninstall behavior](FORK_CHANGES.md) before installing.
+
 <div align="center">
   <img src="./public/assets/logo.png" alt="MZ指纹浏览器 Logo" width="120" />
   <h1>MZ指纹浏览器</h1>

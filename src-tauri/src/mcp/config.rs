@@ -171,7 +171,8 @@ pub fn load_config(app: &AppHandle) -> Result<McpConfig, String> {
 pub fn save_config(app: &AppHandle, config: &McpConfig) -> Result<(), String> {
     config.validate()?;
     let mut stored = config.clone();
-    stored.access_token = business::secret::protect(&config.access_token);
+    stored.access_token = business::secret::protect(&config.access_token)
+        .map_err(|error| format!("无法加密 MCP 访问令牌: {error}"))?;
     let value = serde_json::to_value(stored).map_err(|error| error.to_string())?;
     set_store_key(app, keys::MCP, value)
 }

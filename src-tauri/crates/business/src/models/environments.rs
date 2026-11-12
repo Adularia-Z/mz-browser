@@ -1512,6 +1512,7 @@ pub async fn insert_environment_cookie(
     secure: Option<bool>,
     same_site: Option<&str>,
 ) -> Result<i32, Error> {
+    let protected_value = crate::secret::protect(value).map_err(Error::Protocol)?;
     let id: i32 = sqlx::query_scalar(
         r#"
         INSERT INTO environment_cookies (environment_uuid, site_input, domain, name, value, path, http_only, secure, same_site)
@@ -1523,7 +1524,7 @@ pub async fn insert_environment_cookie(
     .bind(site_input)
     .bind(domain)
     .bind(name)
-    .bind(crate::secret::protect(value))
+    .bind(protected_value)
     .bind(path.unwrap_or("/"))
     .bind(http_only.unwrap_or(false))
     .bind(secure.unwrap_or(false))
@@ -1542,6 +1543,7 @@ pub async fn batch_insert_environment_cookies(
 ) -> Result<i32, Error> {
     let mut count = 0;
     for cookie in cookies {
+        let protected_value = crate::secret::protect(&cookie.value).map_err(Error::Protocol)?;
         sqlx::query(
             r#"
             INSERT INTO environment_cookies (environment_uuid, site_input, domain, name, value, path, http_only, secure, same_site)
@@ -1553,7 +1555,7 @@ pub async fn batch_insert_environment_cookies(
         .bind(&cookie.site_input)
         .bind(&cookie.domain)
         .bind(&cookie.name)
-        .bind(crate::secret::protect(&cookie.value))
+        .bind(protected_value)
         .bind(cookie.path.as_deref().unwrap_or("/"))
         .bind(cookie.http_only.unwrap_or(false))
         .bind(cookie.secure.unwrap_or(false))
